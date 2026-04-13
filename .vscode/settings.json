@@ -1,0 +1,32 @@
+{
+    "C_Cpp.autocomplete": "default",
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    "C_Cpp.codeAnalysis.runAutomatically": true,
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.intelliSenseEngine": "default",
+    "cmake.configureOnEdit": false,
+    "cmake.configureOnOpen": false,
+    "cmake.environment": {
+        "VSCMD_START_DIR": "${workspaceFolder}"
+    },
+    "cmake.useCMakePresets": "always",
+    "editor.detectIndentation": false,
+    "editor.guides.indentation": false,
+    "editor.insertSpaces": false,
+    "editor.minimap.enabled": false,
+    "files.eol": "\n",
+    "files.exclude": {
+        "bin/": true,
+        "build/": true,
+        "install/": true
+    },
+    "files.insertFinalNewline": true,
+    "files.trimTrailingWhitespace": true,
+    "search.exclude": {
+        "bin/": true,
+        "build/": true,
+        "install/": true
+    }
+}
