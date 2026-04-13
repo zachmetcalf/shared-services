@@ -1,0 +1,13 @@
+# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+
+# directories
+bin/
+build/
+install/
+
+# files
+Gemfile.lock
+
+# visual studio
+.vs/
+*.aps
