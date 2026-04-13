@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "clean",
+            "type": "shell",
+            "command": "./clean.sh",
+            "windows": {
+                "command": ".\\clean.bat"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/scripts/setup"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "setup",
+            "type": "shell",
+            "command": "./setup.sh",
+            "windows": {
+                "command": ".\\setup.bat"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/scripts/setup"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
