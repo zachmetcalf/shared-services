@@ -2,26 +2,29 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "clean",
+            "label": "hello: run",
             "type": "shell",
-            "command": "./clean.sh",
-            "windows": {
-                "command": ".\\clean.bat"
-            },
+            "command": "go run .",
             "options": {
-                "cwd": "${workspaceFolder}/scripts/setup"
+                "cwd": "${workspaceFolder}/services/hello"
             },
             "problemMatcher": []
         },
         {
-            "label": "setup",
+            "label": "hello: test",
             "type": "shell",
-            "command": "./setup.sh",
-            "windows": {
-                "command": ".\\setup.bat"
-            },
+            "command": "go test ./...",
             "options": {
-                "cwd": "${workspaceFolder}/scripts/setup"
+                "cwd": "${workspaceFolder}/services/hello"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "hello: vet",
+            "type": "shell",
+            "command": "go vet ./...",
+            "options": {
+                "cwd": "${workspaceFolder}/services/hello"
             },
             "problemMatcher": []
         }
