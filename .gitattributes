@@ -1,0 +1,7 @@
+# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+
+# defaults
+* text=auto eol=lf
+
+# windows
+*.bat text eol=crlf
