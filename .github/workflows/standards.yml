@@ -1,0 +1,41 @@
+# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+
+name: Standards
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-standards:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run standards script
+        shell: cmd
+        run: scripts\standards\standards.bat
+
+      - name: Check for changes
+        id: changed
+        shell: pwsh
+        run: |
+          if ((git status --porcelain).Length -eq 0) {
+            "value=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "value=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Create pull request
+        if: ${{ steps.changed.outputs.value == 'true' }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/update-standards
+          commit-message: "[automation] #standards"
+          title: "[automation] #standards"
+          body: updated standards

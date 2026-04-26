@@ -1,0 +1,137 @@
+# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+
+name: Slack-Proxy Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: slack-proxy-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      image_name: ${{ steps.meta.outputs.image_name }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set Image Metadata
+        id: meta
+        shell: bash
+        run: |
+          echo "image_name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/slack-proxy" >> "$GITHUB_OUTPUT"
+          echo "image_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: services/slack-proxy/go.mod
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test
+        working-directory: services/slack-proxy
+        shell: bash
+        run: |
+          coverprofile="${RUNNER_TEMP}/slack-proxy.cover"
+          go test -coverprofile="${coverprofile}" ./...
+          coverage="$(go tool cover -func="${coverprofile}" | awk '/^total:/ { print $3 }')"
+
+          {
+            echo "## Coverage"
+            echo
+            echo "| service | coverage |"
+            echo "| --- | --- |"
+            echo "| slack-proxy | ${coverage} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/slack-proxy
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_name }}:${{ steps.meta.outputs.image_tag }}
+            ${{ steps.meta.outputs.image_name }}:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_NAME: ${{ needs.build.outputs.image_name }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          SLACK_PROXY_DOMAIN: ${{ secrets.SLACK_PROXY_DOMAIN }}
+          SLACK_PROXY_ENV_FILE: ${{ secrets.SLACK_PROXY_ENV_FILE }}
+        with:
+          host: ${{ secrets.GCE_HOST }}
+          username: ${{ secrets.GCE_USER }}
+          key: ${{ secrets.GCE_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_NAME,IMAGE_TAG,SLACK_PROXY_DOMAIN,SLACK_PROXY_ENV_FILE
+          script: |
+            set -euo pipefail
+
+            if [ -z "${SLACK_PROXY_ENV_FILE}" ]; then
+              echo "SLACK_PROXY_ENV_FILE secret is empty"
+              exit 1
+            fi
+
+            ENV_FILE="/etc/slack-proxy/.env"
+            DATA_DIR="/var/lib/slack-proxy"
+
+            sudo mkdir -p /etc/slack-proxy "${DATA_DIR}"
+            sudo chown -R 65532:65532 "${DATA_DIR}"
+            sudo chmod 700 "${DATA_DIR}"
+            printf "%s\n" "${SLACK_PROXY_ENV_FILE}" | sudo tee "${ENV_FILE}" >/dev/null
+            sudo chmod 600 "${ENV_FILE}"
+
+            if [ -n "${SLACK_PROXY_DOMAIN}" ]; then
+              CADDY_SITE="${SLACK_PROXY_DOMAIN}"
+            else
+              CADDY_SITE=":80"
+            fi
+
+            printf "%s\n%s\n%s\n" \
+              "${CADDY_SITE} {" \
+              "    reverse_proxy 127.0.0.1:8082" \
+              "}" | sudo tee /etc/caddy/Caddyfile >/dev/null
+            sudo systemctl reload caddy
+
+            printf "%s\n" "${GHCR_TOKEN}" | sudo docker login ghcr.io -u "${GHCR_USER}" --password-stdin >/dev/null
+            trap 'sudo docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+
+            sudo docker pull "${IMAGE_NAME}:${IMAGE_TAG}"
+            sudo docker rm -f slack-proxy >/dev/null 2>&1 || true
+            sudo docker run -d \
+              --name slack-proxy \
+              --restart unless-stopped \
+              --env-file "${ENV_FILE}" \
+              -e SLACK_TOKEN_STORE_PATH=/data/token-store.json \
+              -v "${DATA_DIR}:/data" \
+              -p 127.0.0.1:8082:8082 \
+              "${IMAGE_NAME}:${IMAGE_TAG}"
+
+            curl -fsS http://127.0.0.1:8082/ping >/dev/null
+            curl -fsS http://127.0.0.1/ping >/dev/null
+            sudo docker image prune -f

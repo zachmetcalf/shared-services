@@ -1,0 +1,18 @@
+# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+
+# directories
+.terraform/
+bin/
+build/
+install/
+
+# files
+*.env
+*.tfstate
+*.tfstate.*
+*.tfvars
+Gemfile.lock
+
+# visual studio
+.vs/
+*.aps

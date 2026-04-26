@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "slack-proxy: run",
+            "type": "shell",
+            "command": "go run .",
+            "options": {
+                "cwd": "${workspaceFolder}/services/slack-proxy"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "slack-proxy: test",
+            "type": "shell",
+            "command": "go test ./...",
+            "options": {
+                "cwd": "${workspaceFolder}/services/slack-proxy"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "slack-proxy: vet",
+            "type": "shell",
+            "command": "go vet ./...",
+            "options": {
+                "cwd": "${workspaceFolder}/services/slack-proxy"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

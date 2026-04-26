@@ -1,0 +1,23 @@
+{
+    "folders": [
+        {
+            "name": "shared",
+            "path": "../shared"
+        },
+        {
+            "name": "shared-project",
+            "path": "../shared-project"
+        },
+		{
+            "name": "shared-services",
+            "path": "."
+        },
+        {
+            "name": "3rdparty",
+            "path": "../3rdparty"
+        }
+    ],
+    "settings": {
+        "cmake.defaultActiveFolder": "shared-services"
+    }
+}

@@ -1,0 +1,5 @@
+# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+
+# files
+*.env
+data/token-store.json
