@@ -15,7 +15,7 @@ jobs:
   update-standards:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Run standards script
         shell: cmd
@@ -33,7 +33,7 @@ jobs:
 
       - name: Create pull request
         if: ${{ steps.changed.outputs.value == 'true' }}
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: automation/update-standards
           commit-message: "[automation] #standards"
