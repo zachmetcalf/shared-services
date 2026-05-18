@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
 
 # directories
+__pycache__/
 .terraform/
 bin/
 build/
