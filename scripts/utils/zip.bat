@@ -19,7 +19,7 @@ if exist "%zippath%" (
 )
 
 powershell -NoProfile -Command "Compress-Archive -Force -Path (Get-ChildItem -LiteralPath '.' -File | Select-Object -ExpandProperty FullName) -DestinationPath '%zippath%'"
-powershell -NoProfile -Command "$paths = @('.codex','.github','.vscode','config','docs','infra','scripts','services','source') | Where-Object { Test-Path $_ }; if ($paths.Length -gt 0) { Compress-Archive -Update -Path $paths -DestinationPath '%zippath%' }"
+powershell -NoProfile -Command "$paths = @('.github','.vscode','infra','scripts','services') | Where-Object { Test-Path $_ }; if ($paths.Length -gt 0) { Compress-Archive -Update -Path $paths -DestinationPath '%zippath%' }"
 
 popd
 
