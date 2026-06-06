@@ -1,0 +1,13 @@
+{
+    "C_Cpp.codeAnalysis.clangTidy.path": "C:\\Program Files\\Microsoft Visual Studio\\18\\Insiders\\VC\\Tools\\Llvm\\x64\\bin\\clang-tidy.exe",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}\\build\\windows-debug\\compile_commands.json",
+    "chatgpt.followUpQueueMode": "steer",
+    "files.exclude": {
+        "**/.git": false,
+        "**/__pycache__": true
+    },
+    "search.exclude": {
+        "**/__pycache__": true
+    },
+    "workbench.colorTheme": "Visual Studio Dark - C++"
+}
