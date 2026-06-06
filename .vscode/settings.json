@@ -1,6 +1,7 @@
 {
     "C_Cpp.autocomplete": "default",
     "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
     "C_Cpp.codeAnalysis.runAutomatically": true,
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "C_Cpp.errorSquiggles": "enabled",
@@ -17,15 +18,15 @@
     "editor.minimap.enabled": false,
     "files.eol": "\n",
     "files.exclude": {
-        "bin/": true,
-        "build/": true,
-        "install/": true
+        "bin": true,
+        "build": true,
+        "install": true
     },
     "files.insertFinalNewline": true,
     "files.trimTrailingWhitespace": true,
     "search.exclude": {
-        "bin/": true,
-        "build/": true,
-        "install/": true
+        "bin": true,
+        "build": true,
+        "install": true
     }
 }
