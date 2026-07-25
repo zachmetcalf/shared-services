@@ -3,17 +3,15 @@
 # directories
 __pycache__/
 .terraform/
+.vs/
 bin/
 build/
 install/
 
 # files
+*.aps
 *.env
 *.tfstate
 *.tfstate.*
 *.tfvars
 Gemfile.lock
-
-# visual studio
-.vs/
-*.aps
