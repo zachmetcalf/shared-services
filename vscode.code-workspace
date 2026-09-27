@@ -1,23 +1,8 @@
 {
     "folders": [
         {
-            "name": "shared",
-            "path": "../shared"
-        },
-        {
-            "name": "shared-games",
-            "path": "../shared-games"
-        },
-        {
-            "name": "shared-project",
-            "path": "../shared-project"
-        },
-        {
             "name": "shared-services",
             "path": "."
         }
-    ],
-    "settings": {
-        "cmake.defaultActiveFolder": "shared-services"
-    }
+    ]
 }
