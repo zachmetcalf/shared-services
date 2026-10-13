@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: slack-proxy-deploy-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,14 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set Image Metadata
+      - name: Set image metadata
         id: meta
         shell: bash
         run: |
           echo "image_name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/slack-proxy" >> "$GITHUB_OUTPUT"
           echo "image_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup
+      - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: services/slack-proxy/go.mod
@@ -39,8 +39,8 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Test
-        working-directory: services/slack-proxy
         shell: bash
+        working-directory: services/slack-proxy
         run: |
           coverprofile="${RUNNER_TEMP}/slack-proxy.cover"
           go test -coverprofile="${coverprofile}" ./...
@@ -61,7 +61,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Image
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: services/slack-proxy
@@ -71,9 +71,9 @@ jobs:
             ${{ steps.meta.outputs.image_name }}:latest
 
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: build
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
