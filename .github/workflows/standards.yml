@@ -12,31 +12,41 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   update-standards:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Run standards script
         shell: cmd
         run: scripts\standards\standards.bat
 
-      - name: Check for changes
-        id: changed
+      - name: Record generation
+        id: generation
         shell: pwsh
         run: |
-          if ((git status --porcelain).Length -eq 0) {
-            "value=false" >> $env:GITHUB_OUTPUT
-          } else {
-            "value=true" >> $env:GITHUB_OUTPUT
-          }
+          $base = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "base=$base" >> $env:GITHUB_OUTPUT
+          "time=$([DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC" >> $env:GITHUB_OUTPUT
 
       - name: Create pull request
-        if: ${{ steps.changed.outputs.value == 'true' }}
         uses: peter-evans/create-pull-request@v7
         with:
           branch: automation/update-standards
+          delete-branch: true
           commit-message: "[automation] #standards"
           title: "[automation] #standards"
-          body: updated standards
+          body: |
+            Updated standards
+
+            Generated: ${{ steps.generation.outputs.time }}
+            Base commit: ${{ steps.generation.outputs.base }}
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
