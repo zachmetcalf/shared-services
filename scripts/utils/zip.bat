@@ -2,11 +2,10 @@
 
 @echo off
 title zip
+setlocal
 
 set cwd=%~dp0
 set projectdir=%cwd%..\..
-
-pushd "%projectdir%"
 
 for %%i in ("%projectdir%") do set projectname=%%~ni
 
@@ -14,14 +13,12 @@ set zipdir=%projectdir%\..
 set zipname=%projectname%.zip
 set zippath=%zipdir%\%zipname%
 
-if exist "%zippath%" (
-	del "%zippath%"
-)
-
-powershell -NoProfile -Command "Compress-Archive -Force -Path (Get-ChildItem -LiteralPath '.' -File | Select-Object -ExpandProperty FullName) -DestinationPath '%zippath%'"
-powershell -NoProfile -Command "$paths = @('.github','.vscode','infra','scripts','services') | Where-Object { Test-Path $_ }; if ($paths.Length -gt 0) { Compress-Archive -Update -Path $paths -DestinationPath '%zippath%' }"
-
-popd
+powershell -NoProfile -Command ^
+	"$ErrorActionPreference = 'Stop';" ^
+	"$paths = @(Get-ChildItem -LiteralPath $env:projectdir -File | Select-Object -ExpandProperty FullName);" ^
+	"$paths += @('.github','.vscode','infra','scripts','services') | ForEach-Object { Join-Path $env:projectdir $_ } | Where-Object { Test-Path -LiteralPath $_ };" ^
+	"Compress-Archive -Force -LiteralPath $paths -DestinationPath $env:zippath"
+if errorlevel 1 exit /b 1
 
 echo zip completed
 exit /b 0
