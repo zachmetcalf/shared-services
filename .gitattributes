@@ -3,5 +3,5 @@
 # defaults
 * text=auto eol=lf
 
-# windows
+# bat
 *.bat text eol=crlf

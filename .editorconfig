@@ -10,8 +10,17 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 indent_style = tab
 indent_size = 4
-tab_width = 4
 
-# windows
+# bat
 [*.bat]
 end_of_line = crlf
+
+# json
+[*.json]
+indent_style = space
+indent_size = 4
+
+# yaml
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
