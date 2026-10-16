@@ -16,11 +16,16 @@ indent_size = 4
 end_of_line = crlf
 
 # json
-[*.json]
+[*.{code-workspace,json,jsonc}]
 indent_style = space
 indent_size = 4
 
+# terraform
+[*.{hcl,tf,tfvars}]
+indent_style = space
+indent_size = 2
+
 # yaml
-[*.{yml,yaml}]
+[*.{clang-tidy,yaml,yml}]
 indent_style = space
 indent_size = 2

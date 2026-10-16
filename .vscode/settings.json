@@ -1,4 +1,12 @@
 {
+    "[json]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4
+    },
+    "[jsonc]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4
+    },
     "C_Cpp.autocomplete": "default",
     "C_Cpp.codeAnalysis.clangTidy.enabled": true,
     "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
