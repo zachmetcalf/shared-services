@@ -2,15 +2,24 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 )
 
-const kBearerPrefix = "Bearer "
+const (
+	kBearerPrefix         = "Bearer "
+	kMaximumRequestBytes  = 1 << 20
+	kMaximumResponseBytes = 8 << 20
+)
+
+var errBodyTooLarge = errors.New("body exceeds size limit")
 
 func isBlank(value string) bool {
 	return strings.TrimSpace(value) == ""
@@ -76,12 +85,47 @@ func loadDotEnvIfExists(path string) error {
 	return scanner.Err()
 }
 
-func readRequestBody(r *http.Request, method string) ([]byte, error) {
-	if method != http.MethodPost {
+func readLimitedBody(reader io.Reader, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, errBodyTooLarge
+	}
+
+	return body, nil
+}
+
+func readRequestBody(r *http.Request) ([]byte, error) {
+	if r.Method != http.MethodPost {
 		return nil, nil
 	}
 
-	return io.ReadAll(r.Body)
+	return readLimitedBody(r.Body, kMaximumRequestBytes)
+}
+
+func errorReason(err error) string {
+	if errors.Is(err, errBodyTooLarge) {
+		return "body_too_large"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+
+	var networkError net.Error
+	if errors.As(err, &networkError) {
+		if networkError.Timeout() {
+			return "timeout"
+		}
+
+		return "network_error"
+	}
+
+	return "operation_failed"
 }
 
 func writeJson(w http.ResponseWriter, statusCode int, payload any) {
