@@ -33,6 +33,8 @@ func newTestApp(t *testing.T, cfg config) *app {
 }
 
 func newAppWithBotToken(t *testing.T, apiUrl string, botToken string) *app {
+	t.Helper()
+
 	return newTestApp(t, config{
 		SlackApiUrl:   apiUrl,
 		SlackBotToken: botToken,
@@ -40,6 +42,8 @@ func newAppWithBotToken(t *testing.T, apiUrl string, botToken string) *app {
 }
 
 func newAppWithBotTokenAndProxyKey(t *testing.T, apiUrl string, botToken string, proxyKey string) *app {
+	t.Helper()
+
 	return newTestApp(t, config{
 		SlackApiUrl:   apiUrl,
 		SlackBotToken: botToken,
@@ -86,12 +90,11 @@ func TestValidateConfig(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			err := validateConfig(test.cfg)
 			gotErr := err != nil
 			if gotErr != test.wantErr {
-				t.Fatalf("validate config error: got %t, want %t (err: %v)", gotErr, test.wantErr, err)
+				t.Fatalf("validate config error: got %t, want %t (error: %v)", gotErr, test.wantErr, err)
 			}
 		})
 	}
@@ -175,8 +178,7 @@ func TestAuthTestForwards(t *testing.T) {
 	if got, want := gotMethod, http.MethodGet; got != want {
 		t.Fatalf("method: got %s, want %s", got, want)
 	}
-	wantPath := "/" + kSlackMethodAuthTest
-	if got, want := gotPath, wantPath; got != want {
+	if got, want := gotPath, "/"+kSlackMethodAuthTest; got != want {
 		t.Fatalf("path: got %s, want %s", got, want)
 	}
 	if got, want := gotAuth, "Bearer xoxb-test"; got != want {
@@ -347,7 +349,6 @@ func TestShouldRefreshToken(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			got := shouldRefreshToken(test.statusCode, []byte(test.body))
 			if got != test.want {
@@ -394,8 +395,7 @@ func TestChatPostMessageForwards(t *testing.T) {
 	if got, want := gotMethod, http.MethodPost; got != want {
 		t.Fatalf("method: got %s, want %s", got, want)
 	}
-	wantPath := "/" + kSlackMethodChatPostMessage
-	if got, want := gotPath, wantPath; got != want {
+	if got, want := gotPath, "/"+kSlackMethodChatPostMessage; got != want {
 		t.Fatalf("path: got %s, want %s", got, want)
 	}
 	if got, want := gotAuth, "Bearer xoxb-test"; got != want {
@@ -446,22 +446,24 @@ func TestRetryAfterAuthErrorKeepsResponseWhenTokenFetchFails(t *testing.T) {
 	originalBody := []byte(`{"ok":false,"error":"token_expired"}`)
 	req := httptest.NewRequest(http.MethodPost, kRouteProxyChatPostMessage, strings.NewReader(`{"channel":"C1","text":"hello"}`))
 
-	statusCode, contentType, body := a.retryAfterAuthError(
+	response := a.retryAfterAuthError(
 		req,
 		kSlackMethodChatPostMessage,
 		[]byte(`{"channel":"C1","text":"hello"}`),
-		http.StatusOK,
-		kJsonContentType,
-		originalBody,
+		slackResponse{
+			StatusCode:  http.StatusOK,
+			ContentType: kJsonContentType,
+			Body:        originalBody,
+		},
 	)
 
-	if got, want := statusCode, http.StatusOK; got != want {
+	if got, want := response.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status code: got %d, want %d", got, want)
 	}
-	if got, want := contentType, kJsonContentType; got != want {
+	if got, want := response.ContentType, kJsonContentType; got != want {
 		t.Fatalf("content type: got %s, want %s", got, want)
 	}
-	if got, want := string(body), string(originalBody); got != want {
+	if got, want := string(response.Body), string(originalBody); got != want {
 		t.Fatalf("response body: got %s, want %s", got, want)
 	}
 }
@@ -500,11 +502,11 @@ func TestChatPostMessageRefreshesAndRetriesOnAuthError(t *testing.T) {
 				return
 			}
 			if got, want := form.Get("grant_type"), "refresh_token"; got != want {
-				t.Errorf("grant type mismatch (got: %s, want: %s)", got, want)
+				t.Errorf("grant type: got %s, want %s", got, want)
 				return
 			}
 			if got, want := form.Get("refresh_token"), "xoxe-1-refresh"; got != want {
-				t.Errorf("refresh token mismatch (got: %s, want: %s)", got, want)
+				t.Errorf("refresh token: got %s, want %s", got, want)
 				return
 			}
 
@@ -573,11 +575,151 @@ func TestFilesInfoForwardsQuery(t *testing.T) {
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Fatalf("status code: got %d, want %d", got, want)
 	}
-	wantPath := "/" + kSlackMethodFilesInfo
-	if got, want := gotPath, wantPath; got != want {
+	if got, want := gotPath, "/"+kSlackMethodFilesInfo; got != want {
 		t.Fatalf("path: got %s, want %s", got, want)
 	}
 	if got, want := gotQuery, "file=F123"; got != want {
 		t.Fatalf("query: got %s, want %s", got, want)
+	}
+}
+
+func TestConversationRoutesForward(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		route  string
+		query  string
+		body   string
+	}{
+		{
+			name:   "channel discovery",
+			method: http.MethodGet,
+			route:  kRouteProxyUsersConversations,
+			query:  "limit=10&types=public_channel",
+		},
+		{
+			name:   "history",
+			method: http.MethodPost,
+			route:  kRouteProxyConversationsHistory,
+			body:   `{ "channel": "C123", "limit": 10 }`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got, want := r.Method, test.method; got != want {
+					t.Errorf("method: got %s, want %s", got, want)
+				}
+				if got, want := r.URL.Path, "/"+strings.TrimPrefix(test.route, kRouteSlackPrefix); got != want {
+					t.Errorf("path: got %s, want %s", got, want)
+				}
+				if got, want := r.URL.RawQuery, test.query; got != want {
+					t.Errorf("query: got %s, want %s", got, want)
+				}
+				if got, want := r.Header.Get("Authorization"), "Bearer test-token"; got != want {
+					t.Errorf("auth header: got %s, want %s", got, want)
+				}
+
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("request body read failed (error: %v)", err)
+					return
+				}
+				if got, want := string(body), test.body; got != want {
+					t.Errorf("forwarded body: got %s, want %s", got, want)
+				}
+				_, _ = w.Write([]byte(`{"ok":true}`))
+			}))
+			defer api.Close()
+
+			a := newAppWithBotTokenAndProxyKey(t, api.URL, "test-token", "test-key")
+
+			req := httptest.NewRequest(test.method, test.route+"?"+test.query, strings.NewReader(test.body))
+			req.Header.Set("Authorization", "Bearer test-key")
+			rec := httptest.NewRecorder()
+			a.handler().ServeHTTP(rec, req)
+
+			if got, want := rec.Code, http.StatusOK; got != want {
+				t.Fatalf("status code: got %d, want %d", got, want)
+			}
+			if got, want := rec.Body.String(), `{"ok":true}`; got != want {
+				t.Fatalf("response body: got %s, want %s", got, want)
+			}
+		})
+	}
+}
+
+func TestProxyHTTPFailures(t *testing.T) {
+	tests := []struct {
+		name         string
+		requestBody  string
+		statusCode   int
+		responseBody string
+		wantStatus   int
+		wantCalls    int
+	}{
+		{
+			name:       "redirect",
+			statusCode: http.StatusTemporaryRedirect,
+			wantStatus: http.StatusBadGateway,
+			wantCalls:  1,
+		},
+		{
+			name:        "request too large",
+			requestBody: strings.Repeat(" ", kMaximumRequestBytes+1),
+			statusCode:  http.StatusOK,
+			wantStatus:  http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:         "response too large",
+			statusCode:   http.StatusOK,
+			responseBody: strings.Repeat(" ", kMaximumResponseBytes+1),
+			wantStatus:   http.StatusBadGateway,
+			wantCalls:    1,
+		},
+		{
+			name:         "rate limited",
+			statusCode:   http.StatusTooManyRequests,
+			responseBody: `{"ok":false,"error":"ratelimited"}`,
+			wantStatus:   http.StatusTooManyRequests,
+			wantCalls:    1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var gotCalls int
+
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotCalls++
+				w.Header().Set("Location", "/must-not-follow")
+				w.Header().Set("Retry-After", "9")
+				w.WriteHeader(test.statusCode)
+				_, _ = w.Write([]byte(test.responseBody))
+			}))
+			defer api.Close()
+
+			a := newAppWithBotToken(t, api.URL, "test-token")
+
+			req := httptest.NewRequest(http.MethodPost, kRouteProxyChatPostMessage, strings.NewReader(test.requestBody))
+			rec := httptest.NewRecorder()
+			a.handler().ServeHTTP(rec, req)
+
+			if got, want := rec.Code, test.wantStatus; got != want {
+				t.Fatalf("status code: got %d, want %d", got, want)
+			}
+			if got, want := gotCalls, test.wantCalls; got != want {
+				t.Fatalf("api calls: got %d, want %d", got, want)
+			}
+			if test.statusCode == http.StatusTooManyRequests {
+				if got, want := rec.Header().Get("Retry-After"), "9"; got != want {
+					t.Fatalf("retry after: got %s, want %s", got, want)
+				}
+				if got, want := rec.Body.String(), test.responseBody; got != want {
+					t.Fatalf("response body: got %s, want %s", got, want)
+				}
+			}
+		})
 	}
 }
