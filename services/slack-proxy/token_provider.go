@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -86,6 +85,7 @@ func newTokenProvider(cfg config, client *http.Client) (tokenProvider, error) {
 		if err := p.loadTokenStore(); err != nil {
 			return nil, err
 		}
+
 		return p, nil
 	}
 
@@ -104,7 +104,7 @@ func (p *rotatingTokenProvider) AccessToken(ctx context.Context) (string, error)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.shouldRefreshTokenLocked(false) {
+	if p.shouldRefreshTokenLocked() {
 		if err := p.refreshTokenLocked(ctx); err != nil {
 			return "", err
 		}
@@ -124,8 +124,8 @@ func (p *rotatingTokenProvider) ForceRefresh(ctx context.Context) error {
 	return p.refreshTokenLocked(ctx)
 }
 
-func (p *rotatingTokenProvider) shouldRefreshTokenLocked(force bool) bool {
-	if force || isBlank(p.accessToken) {
+func (p *rotatingTokenProvider) shouldRefreshTokenLocked() bool {
+	if isBlank(p.accessToken) {
 		return true
 	}
 	if p.expiresAtUTC.IsZero() {
@@ -263,7 +263,7 @@ func (p *rotatingTokenProvider) requestOAuthLocked(ctx context.Context, values u
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body, kMaximumResponseBytes)
 	if err != nil {
 		return oauthResponse{}, err
 	}
