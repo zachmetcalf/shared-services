@@ -28,6 +28,8 @@ func TestLoadDotEnvIfExistsMissingFile(t *testing.T) {
 func TestLoadDotEnvIfExistsLoadsValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	content := strings.Join([]string{
+		"# comment",
+		" =ignored",
 		kTestDotEnvOverrideKey + "=from-file",
 		kTestDotEnvLoadedKey + "=:9000",
 		"MALFORMED",
