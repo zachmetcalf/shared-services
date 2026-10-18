@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -86,6 +85,7 @@ func newTokenProvider(cfg config, client *http.Client) (tokenProvider, error) {
 		if err := p.loadTokenStore(); err != nil {
 			return nil, err
 		}
+
 		return p, nil
 	}
 
@@ -104,7 +104,7 @@ func (p *rotatingTokenProvider) AccessToken(ctx context.Context) (string, error)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.shouldRefreshTokenLocked(false) {
+	if p.shouldRefreshTokenLocked() {
 		if err := p.refreshTokenLocked(ctx); err != nil {
 			return "", err
 		}
@@ -124,8 +124,8 @@ func (p *rotatingTokenProvider) ForceRefresh(ctx context.Context) error {
 	return p.refreshTokenLocked(ctx)
 }
 
-func (p *rotatingTokenProvider) shouldRefreshTokenLocked(force bool) bool {
-	if force || isBlank(p.accessToken) {
+func (p *rotatingTokenProvider) shouldRefreshTokenLocked() bool {
+	if isBlank(p.accessToken) {
 		return true
 	}
 	if p.expiresAtUTC.IsZero() {
@@ -202,13 +202,7 @@ func (p *rotatingTokenProvider) loadTokenStore() error {
 		p.expiresAtUTC = expiresAtUTC.UTC()
 	}
 
-	log.Printf(
-		"token store loaded (path: %s, has_access_token: %t, has_refresh_token: %t, has_expires_at_utc: %t)",
-		storePath,
-		!isBlank(p.accessToken),
-		!isBlank(p.refreshToken),
-		!p.expiresAtUTC.IsZero(),
-	)
+	log.Printf("token store loaded (path: %s)", storePath)
 	return nil
 }
 
@@ -263,7 +257,7 @@ func (p *rotatingTokenProvider) requestOAuthLocked(ctx context.Context, values u
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body, kMaximumResponseBytes)
 	if err != nil {
 		return oauthResponse{}, err
 	}
@@ -275,9 +269,9 @@ func (p *rotatingTokenProvider) requestOAuthLocked(ctx context.Context, values u
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if payload.Error != "" {
-			return oauthResponse{}, fmt.Errorf("oauth request failed (status: %d, error: %s)", resp.StatusCode, payload.Error)
+			return oauthResponse{}, fmt.Errorf("oauth request failed (status_code: %d, error: %s)", resp.StatusCode, payload.Error)
 		}
-		return oauthResponse{}, fmt.Errorf("oauth request failed (status: %d)", resp.StatusCode)
+		return oauthResponse{}, fmt.Errorf("oauth request failed (status_code: %d)", resp.StatusCode)
 	}
 	if !payload.OK {
 		return oauthResponse{}, fmt.Errorf("oauth request failed (error: %s)", payload.Error)

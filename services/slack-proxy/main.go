@@ -2,12 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -25,25 +26,29 @@ const (
 	kRouteSlackPrefix        = "/v1/slack/"
 	kRouteSlackOAuthV2Access = "/oauth.v2.access"
 
-	kSlackMethodAuthTest        = "auth.test"
-	kSlackMethodChatPostMessage = "chat.postMessage"
-	kSlackMethodChatUpdate      = "chat.update"
-	kSlackMethodChatDelete      = "chat.delete"
-	kSlackMethodFilesGetUpload  = "files.getUploadURLExternal"
-	kSlackMethodFilesComplete   = "files.completeUploadExternal"
-	kSlackMethodFilesInfo       = "files.info"
-	kSlackMethodReactionsAdd    = "reactions.add"
-	kSlackMethodReactionsRemove = "reactions.remove"
+	kSlackMethodAuthTest             = "auth.test"
+	kSlackMethodChatPostMessage      = "chat.postMessage"
+	kSlackMethodChatUpdate           = "chat.update"
+	kSlackMethodChatDelete           = "chat.delete"
+	kSlackMethodConversationsHistory = "conversations.history"
+	kSlackMethodFilesGetUpload       = "files.getUploadURLExternal"
+	kSlackMethodFilesComplete        = "files.completeUploadExternal"
+	kSlackMethodFilesInfo            = "files.info"
+	kSlackMethodReactionsAdd         = "reactions.add"
+	kSlackMethodReactionsRemove      = "reactions.remove"
+	kSlackMethodUsersConversations   = "users.conversations"
 
-	kRouteProxyAuthTest        = kRouteSlackPrefix + kSlackMethodAuthTest
-	kRouteProxyChatPostMessage = kRouteSlackPrefix + kSlackMethodChatPostMessage
-	kRouteProxyChatUpdate      = kRouteSlackPrefix + kSlackMethodChatUpdate
-	kRouteProxyChatDelete      = kRouteSlackPrefix + kSlackMethodChatDelete
-	kRouteProxyFilesGetUpload  = kRouteSlackPrefix + kSlackMethodFilesGetUpload
-	kRouteProxyFilesComplete   = kRouteSlackPrefix + kSlackMethodFilesComplete
-	kRouteProxyFilesInfo       = kRouteSlackPrefix + kSlackMethodFilesInfo
-	kRouteProxyReactionsAdd    = kRouteSlackPrefix + kSlackMethodReactionsAdd
-	kRouteProxyReactionsRemove = kRouteSlackPrefix + kSlackMethodReactionsRemove
+	kRouteProxyAuthTest             = kRouteSlackPrefix + kSlackMethodAuthTest
+	kRouteProxyChatPostMessage      = kRouteSlackPrefix + kSlackMethodChatPostMessage
+	kRouteProxyChatUpdate           = kRouteSlackPrefix + kSlackMethodChatUpdate
+	kRouteProxyChatDelete           = kRouteSlackPrefix + kSlackMethodChatDelete
+	kRouteProxyConversationsHistory = kRouteSlackPrefix + kSlackMethodConversationsHistory
+	kRouteProxyFilesGetUpload       = kRouteSlackPrefix + kSlackMethodFilesGetUpload
+	kRouteProxyFilesComplete        = kRouteSlackPrefix + kSlackMethodFilesComplete
+	kRouteProxyFilesInfo            = kRouteSlackPrefix + kSlackMethodFilesInfo
+	kRouteProxyReactionsAdd         = kRouteSlackPrefix + kSlackMethodReactionsAdd
+	kRouteProxyReactionsRemove      = kRouteSlackPrefix + kSlackMethodReactionsRemove
+	kRouteProxyUsersConversations   = kRouteSlackPrefix + kSlackMethodUsersConversations
 
 	kEnvSlackApiUrl         = "SLACK_API_URL"
 	kEnvSlackBotToken       = "SLACK_BOT_TOKEN"
@@ -75,6 +80,13 @@ type app struct {
 	tokenProvider tokenProvider
 }
 
+type slackResponse struct {
+	StatusCode  int
+	ContentType string
+	RetryAfter  string
+	Body        []byte
+}
+
 func loadConfig() config {
 	return config{
 		SlackApiUrl:         getEnvOrDefault(kEnvSlackApiUrl, kDefaultSlackApiUrl),
@@ -92,7 +104,7 @@ func validateConfig(cfg config) error {
 		return fmt.Errorf("missing config value (key: %s)", kEnvSlackApiUrl)
 	}
 	if !hasAuthConfig(cfg) {
-		return fmt.Errorf("missing env vars (required: SLACK_BOT_TOKEN or SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REFRESH_TOKEN)")
+		return errors.New("missing env vars (required: SLACK_BOT_TOKEN or SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REFRESH_TOKEN)")
 	}
 
 	return nil
@@ -109,9 +121,12 @@ func hasAuthConfig(cfg config) bool {
 func newApp(cfg config) (*app, error) {
 	client := &http.Client{
 		Timeout: kDefaultHttpTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
-	tokenProvider, err := newTokenProvider(cfg, client)
+	provider, err := newTokenProvider(cfg, client)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +134,7 @@ func newApp(cfg config) (*app, error) {
 	return &app{
 		cfg:           cfg,
 		client:        client,
-		tokenProvider: tokenProvider,
+		tokenProvider: provider,
 	}, nil
 }
 
@@ -131,11 +146,13 @@ func (a *app) handler() http.Handler {
 	mux.HandleFunc(kRouteProxyChatPostMessage, a.handleMethod(http.MethodPost, kSlackMethodChatPostMessage))
 	mux.HandleFunc(kRouteProxyChatUpdate, a.handleMethod(http.MethodPost, kSlackMethodChatUpdate))
 	mux.HandleFunc(kRouteProxyChatDelete, a.handleMethod(http.MethodPost, kSlackMethodChatDelete))
+	mux.HandleFunc(kRouteProxyConversationsHistory, a.handleMethod(http.MethodPost, kSlackMethodConversationsHistory))
 	mux.HandleFunc(kRouteProxyFilesGetUpload, a.handleMethod(http.MethodGet, kSlackMethodFilesGetUpload))
 	mux.HandleFunc(kRouteProxyFilesComplete, a.handleMethod(http.MethodPost, kSlackMethodFilesComplete))
 	mux.HandleFunc(kRouteProxyFilesInfo, a.handleMethod(http.MethodGet, kSlackMethodFilesInfo))
 	mux.HandleFunc(kRouteProxyReactionsAdd, a.handleMethod(http.MethodPost, kSlackMethodReactionsAdd))
 	mux.HandleFunc(kRouteProxyReactionsRemove, a.handleMethod(http.MethodPost, kSlackMethodReactionsRemove))
+	mux.HandleFunc(kRouteProxyUsersConversations, a.handleMethod(http.MethodGet, kSlackMethodUsersConversations))
 
 	return mux
 }
@@ -169,36 +186,42 @@ func (a *app) forward(w http.ResponseWriter, r *http.Request, method string) {
 		return
 	}
 
-	requestBody, err := readRequestBody(r, r.Method)
+	requestBody, err := readRequestBody(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, kErrorInvalidRequestBody)
+		status := http.StatusBadRequest
+		if errors.Is(err, errBodyTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		log.Printf("request body read failed (method: %s, reason: %s)", method, errorReason(err))
+		writeError(w, status, kErrorInvalidRequestBody)
 		return
 	}
 
 	token, err := a.tokenProvider.AccessToken(r.Context())
 	if err != nil {
-		log.Printf("token acquisition failed (method: %s, error: %v)", method, err)
-		writeJson(w, http.StatusInternalServerError, map[string]string{
-			"error":  kErrorMissingSlackAuth,
-			"reason": err.Error(),
-		})
+		log.Printf("token fetch failed (method: %s, reason: %s)", method, errorReason(err))
+		writeError(w, http.StatusInternalServerError, kErrorMissingSlackAuth)
 		return
 	}
 
-	statusCode, contentType, responseBody, err := a.forwardOnce(r, method, requestBody, token)
+	response, err := a.forwardOnce(r, method, requestBody, token)
 	if err != nil {
-		log.Printf("request failed (method: %s, error: %v)", method, err)
+		log.Printf("request failed (method: %s, reason: %s)", method, errorReason(err))
 		writeError(w, http.StatusBadGateway, kErrorSlackRequestFailed)
 		return
 	}
 
-	statusCode, contentType, responseBody = a.retryAfterAuthError(r, method, requestBody, statusCode, contentType, responseBody)
+	response = a.retryAfterAuthError(r, method, requestBody, response)
 
-	w.Header().Set("Content-Type", contentType)
-	w.WriteHeader(statusCode)
-	_, _ = w.Write(responseBody)
+	w.Header().Set("Content-Type", response.ContentType)
+	w.Header().Set("Cache-Control", "no-store")
+	if value := response.RetryAfter; value != "" {
+		w.Header().Set("Retry-After", value)
+	}
+	w.WriteHeader(response.StatusCode)
+	_, _ = w.Write(response.Body)
 
-	log.Printf("request forwarded (method: %s, status: %d)", method, statusCode)
+	log.Printf("request forwarded (method: %s, status_code: %d)", method, response.StatusCode)
 }
 
 func (a *app) isProxyAuthorized(r *http.Request) bool {
@@ -207,7 +230,7 @@ func (a *app) isProxyAuthorized(r *http.Request) bool {
 	}
 
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	return auth == formatBearerAuth(a.cfg.SlackProxyKey)
+	return subtle.ConstantTimeCompare([]byte(auth), []byte(formatBearerAuth(a.cfg.SlackProxyKey))) == 1
 }
 
 func shouldRefreshToken(statusCode int, responseBody []byte) bool {
@@ -226,59 +249,48 @@ func shouldRefreshToken(statusCode int, responseBody []byte) bool {
 		return false
 	}
 
-	lower := strings.ToLower(strings.TrimSpace(payload.Error))
-	if lower == "" {
-		return false
-	}
-
-	return strings.Contains(lower, "auth") || strings.Contains(lower, "token")
+	code := strings.ToLower(payload.Error)
+	return strings.Contains(code, "auth") || strings.Contains(code, "token")
 }
 
-func (a *app) retryAfterAuthError(
-	r *http.Request,
-	method string,
-	requestBody []byte,
-	statusCode int,
-	contentType string,
-	responseBody []byte,
-) (int, string, []byte) {
-	if !shouldRefreshToken(statusCode, responseBody) {
-		return statusCode, contentType, responseBody
+func (a *app) retryAfterAuthError(r *http.Request, method string, requestBody []byte, response slackResponse) slackResponse {
+	if !shouldRefreshToken(response.StatusCode, response.Body) {
+		return response
 	}
 
-	log.Printf("token refresh requested (method: %s, status: %d)", method, statusCode)
+	log.Printf("token refresh requested (method: %s, status_code: %d)", method, response.StatusCode)
 
 	if err := a.tokenProvider.ForceRefresh(r.Context()); err != nil {
-		log.Printf("token refresh failed (method: %s, error: %v)", method, err)
-		return statusCode, contentType, responseBody
+		log.Printf("token refresh failed (method: %s, reason: %s)", method, errorReason(err))
+		return response
 	}
 
 	token, err := a.tokenProvider.AccessToken(r.Context())
 	if err != nil {
-		log.Printf("token fetch after refresh failed (method: %s, error: %v)", method, err)
-		return statusCode, contentType, responseBody
+		log.Printf("token fetch after refresh failed (method: %s, reason: %s)", method, errorReason(err))
+		return response
 	}
 
-	refreshedStatusCode, refreshedContentType, refreshedBody, err := a.forwardOnce(r, method, requestBody, token)
+	refreshed, err := a.forwardOnce(r, method, requestBody, token)
 	if err != nil {
-		log.Printf("request retry failed (method: %s, error: %v)", method, err)
-		return statusCode, contentType, responseBody
+		log.Printf("request retry failed (method: %s, reason: %s)", method, errorReason(err))
+		return response
 	}
 
-	return refreshedStatusCode, refreshedContentType, refreshedBody
+	return refreshed
 }
 
-func (a *app) forwardOnce(r *http.Request, method string, payload []byte, token string) (int, string, []byte, error) {
-	endpointUrl := strings.TrimRight(a.cfg.SlackApiUrl, "/") + "/" + method
+func (a *app) forwardOnce(r *http.Request, method string, requestBody []byte, token string) (slackResponse, error) {
+	endpoint := strings.TrimRight(a.cfg.SlackApiUrl, "/") + "/" + method
 
 	var body io.Reader
 	if r.Method == http.MethodPost {
-		body = bytes.NewReader(payload)
+		body = bytes.NewReader(requestBody)
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, endpointUrl, body)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, endpoint, body)
 	if err != nil {
-		return 0, "", nil, err
+		return slackResponse{}, err
 	}
 
 	if r.Method == http.MethodGet {
@@ -290,13 +302,17 @@ func (a *app) forwardOnce(r *http.Request, method string, payload []byte, token 
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return 0, "", nil, err
+		return slackResponse{}, err
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBody, err := readLimitedBody(resp.Body, kMaximumResponseBytes)
 	if err != nil {
-		return 0, "", nil, err
+		return slackResponse{}, err
+	}
+
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return slackResponse{}, errors.New("upstream redirect rejected")
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -304,29 +320,42 @@ func (a *app) forwardOnce(r *http.Request, method string, payload []byte, token 
 		contentType = kJsonContentType
 	}
 
-	return resp.StatusCode, contentType, responseBody, nil
+	return slackResponse{
+		StatusCode:  resp.StatusCode,
+		ContentType: contentType,
+		RetryAfter:  resp.Header.Get("Retry-After"),
+		Body:        responseBody,
+	}, nil
 }
 
 func main() {
+	log.SetPrefix("[" + kServiceName + "] ")
+
 	if err := loadDotEnvIfExists(kDefaultDotEnvPath); err != nil {
-		log.Printf("%s startup failed (error: %v)", kServiceName, err)
-		os.Exit(1)
+		log.Fatalf("startup failed (error: %v)", err)
 	}
 
 	cfg := loadConfig()
 	if err := validateConfig(cfg); err != nil {
-		log.Printf("%s startup failed (error: %v)", kServiceName, err)
-		os.Exit(1)
+		log.Fatalf("startup failed (error: %v)", err)
 	}
-
-	log.Printf("%s listening (listen_address: %s, slack_api_url: %s)", kServiceName, kDefaultListenAddress, cfg.SlackApiUrl)
 
 	app, err := newApp(cfg)
 	if err != nil {
-		log.Printf("%s startup failed (error: %v)", kServiceName, err)
-		os.Exit(1)
+		log.Fatalf("startup failed (error: %v)", err)
 	}
-	if err := http.ListenAndServe(kDefaultListenAddress, app.handler()); err != nil {
-		log.Printf("%s stopped (error: %v)", kServiceName, err)
+
+	server := &http.Server{
+		Addr:              kDefaultListenAddress,
+		Handler:           app.handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       kDefaultHttpTimeout,
+		WriteTimeout:      2 * kDefaultHttpTimeout,
+		IdleTimeout:       time.Minute,
+	}
+
+	log.Printf("starting (listen_address: %s, slack_api_url: %s)", kDefaultListenAddress, cfg.SlackApiUrl)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("server failed (error: %v)", err)
 	}
 }

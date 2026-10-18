@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,7 +34,7 @@ func TestTokenProviderLoadsTokenStoreOnStartup(t *testing.T) {
 	storePayload := map[string]string{
 		"access_token":   "xoxe.xoxb-stored",
 		"refresh_token":  "xoxe-1-stored",
-		"expires_at_utc": time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339),
+		"expires_at_utc": time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
 	}
 	storeBytes, err := json.Marshal(storePayload)
 	if err != nil {
@@ -65,16 +66,19 @@ func TestTokenProviderRefreshPersistsTokenStore(t *testing.T) {
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.URL.Path, kRouteSlackOAuthV2Access; got != want {
-			t.Fatalf("path: got %s, want %s", got, want)
+			t.Errorf("path: got %s, want %s", got, want)
+			return
 		}
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("oauth request body read failed (error: %v)", err)
+			t.Errorf("oauth request body read failed (error: %v)", err)
+			return
 		}
 		form, err := url.ParseQuery(string(body))
 		if err != nil {
-			t.Fatalf("oauth form parse failed (error: %v)", err)
+			t.Errorf("oauth form parse failed (error: %v)", err)
+			return
 		}
 		gotRefreshToken = form.Get("refresh_token")
 
@@ -127,7 +131,7 @@ func TestTokenProviderRefreshPersistsTokenStore(t *testing.T) {
 	}
 }
 
-func TestTokenProviderRefreshesExpiredTokenOnAccess(t *testing.T) {
+func TestTokenProviderRefreshesExpiringTokenOnAccess(t *testing.T) {
 	var gotRefreshCalls int
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +154,7 @@ func TestTokenProviderRefreshesExpiredTokenOnAccess(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider type mismatch")
 	}
-	rotatingProvider.expiresAtUTC = time.Now().UTC().Add(1 * time.Minute)
+	rotatingProvider.expiresAtUTC = time.Now().UTC().Add(time.Minute)
 
 	token, err := provider.AccessToken(context.Background())
 	if err != nil {
@@ -257,10 +261,14 @@ func TestTokenProviderRefreshReturnsErrorForOAuthFailures(t *testing.T) {
 			statusCode: http.StatusOK,
 			body:       `{"ok":true}`,
 		},
+		{
+			name:       "response too large",
+			statusCode: http.StatusOK,
+			body:       `{"ok":true,"access_token":"xoxe.xoxb-new"}` + strings.Repeat(" ", kMaximumResponseBytes),
+		},
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", kJsonContentType)
@@ -276,8 +284,108 @@ func TestTokenProviderRefreshReturnsErrorForOAuthFailures(t *testing.T) {
 				SlackRefreshToken: "xoxe-1-refresh",
 			})
 
+			if _, err := provider.AccessToken(context.Background()); err == nil {
+				t.Fatalf("access token error: got nil, want non-nil")
+			}
+		})
+	}
+}
+
+func TestTokenProviderRefreshReturnsErrorForRequestFailures(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request (path: %s)", r.URL.Path)
+	}))
+	api.Close()
+
+	tests := []struct {
+		name   string
+		apiUrl string
+	}{
+		{
+			name:   "invalid url",
+			apiUrl: "://invalid",
+		},
+		{
+			name:   "connection failure",
+			apiUrl: api.URL,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := newTestTokenProvider(t, config{
+				SlackApiUrl:       test.apiUrl,
+				SlackClientId:     "client-id",
+				SlackClientSecret: "client-secret",
+				SlackRefreshToken: "xoxe-1-refresh",
+			})
+
 			if err := provider.ForceRefresh(context.Background()); err == nil {
 				t.Fatalf("force refresh error: got nil, want non-nil")
+			}
+		})
+	}
+}
+
+func TestTokenProviderRefreshReturnsErrorForTokenStoreFailures(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", kJsonContentType)
+		_, _ = w.Write([]byte(`{"ok":true,"access_token":"xoxe.xoxb-new","refresh_token":"xoxe-1-refresh-2","expires_in":43200}`))
+	}))
+	defer api.Close()
+
+	tests := []struct {
+		name      string
+		block     string
+		file      bool
+		wantError string
+	}{
+		{
+			name:      "directory create failure",
+			block:     "store",
+			file:      true,
+			wantError: "token store directory create failed",
+		},
+		{
+			name:      "write failure",
+			block:     "store/token-store.json.tmp",
+			wantError: "token store write failed",
+		},
+		{
+			name:      "replace failure",
+			block:     "store/token-store.json",
+			wantError: "token store replace failed",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			provider := newTestTokenProvider(t, config{
+				SlackApiUrl:         api.URL,
+				SlackClientId:       "client-id",
+				SlackClientSecret:   "client-secret",
+				SlackRefreshToken:   "xoxe-1-refresh",
+				SlackTokenStorePath: filepath.Join(dir, "store", "token-store.json"),
+			})
+
+			blockPath := filepath.Join(dir, test.block)
+			if test.file {
+				if err := os.WriteFile(blockPath, nil, 0o600); err != nil {
+					t.Fatalf("file write failed (error: %v)", err)
+				}
+			} else {
+				if err := os.MkdirAll(blockPath, 0o755); err != nil {
+					t.Fatalf("directory create failed (error: %v)", err)
+				}
+			}
+
+			err := provider.ForceRefresh(context.Background())
+			if err == nil {
+				t.Fatalf("force refresh error: got nil, want non-nil")
+			}
+			if got, want := err.Error(), test.wantError; !strings.HasPrefix(got, want) {
+				t.Fatalf("refresh error: got %s, want prefix %s", got, want)
 			}
 		})
 	}
