@@ -78,7 +78,7 @@ func loadDotEnvIfExists(path string) error {
 		value = strings.Trim(value, "\"")
 
 		if err := os.Setenv(key, value); err != nil {
-			return fmt.Errorf("set env failed (key: %s): %w", key, err)
+			return fmt.Errorf("env set failed (key: %s, error: %w)", key, err)
 		}
 	}
 
