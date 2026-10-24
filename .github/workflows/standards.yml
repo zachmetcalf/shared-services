@@ -40,6 +40,7 @@ jobs:
       - name: Create pull request
         uses: peter-evans/create-pull-request@v7
         with:
+          token: ${{ secrets.SHARED_ACTIONS_TOKEN }}
           branch: automation/update-standards
           delete-branch: true
           commit-message: "[automation] #standards"
