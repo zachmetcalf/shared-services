@@ -38,6 +38,7 @@ func newAppWithBotToken(t *testing.T, apiUrl string, botToken string) *app {
 	return newTestApp(t, config{
 		SlackApiUrl:   apiUrl,
 		SlackBotToken: botToken,
+		SlackProxyKey: "proxy-key",
 	})
 }
 
@@ -62,6 +63,7 @@ func TestValidateConfig(t *testing.T) {
 			cfg: config{
 				SlackApiUrl:   "https://slack.com/api",
 				SlackBotToken: "xoxb-token",
+				SlackProxyKey: "proxy-key",
 			},
 		},
 		{
@@ -71,12 +73,22 @@ func TestValidateConfig(t *testing.T) {
 				SlackClientId:     "client-id",
 				SlackClientSecret: "client-secret",
 				SlackRefreshToken: "refresh-token",
+				SlackProxyKey:     "proxy-key",
 			},
+		},
+		{
+			name: "missing proxy key",
+			cfg: config{
+				SlackApiUrl:   "https://slack.com/api",
+				SlackBotToken: "xoxb-token",
+			},
+			wantErr: true,
 		},
 		{
 			name: "missing auth config",
 			cfg: config{
-				SlackApiUrl: "https://slack.com/api",
+				SlackApiUrl:   "https://slack.com/api",
+				SlackProxyKey: "proxy-key",
 			},
 			wantErr: true,
 		},
@@ -169,6 +181,7 @@ func TestAuthTestForwards(t *testing.T) {
 	a := newAppWithBotToken(t, api.URL, "xoxb-test")
 
 	req := httptest.NewRequest(http.MethodGet, kRouteProxyAuthTest, nil)
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -231,10 +244,12 @@ func TestAuthTestRequiresProxyAuth(t *testing.T) {
 
 func TestAuthTestReturnsTokenError(t *testing.T) {
 	a := newTestApp(t, config{
-		SlackApiUrl: "https://example.com/api",
+		SlackApiUrl:   "https://example.com/api",
+		SlackProxyKey: "proxy-key",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, kRouteProxyAuthTest, nil)
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -255,6 +270,7 @@ func TestAuthTestReturnsSlackRequestFailure(t *testing.T) {
 	a := newAppWithBotToken(t, api.URL, "xoxb-test")
 
 	req := httptest.NewRequest(http.MethodGet, kRouteProxyAuthTest, nil)
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -386,6 +402,7 @@ func TestChatPostMessageForwards(t *testing.T) {
 
 	payload := `{"channel":"C1","thread_ts":"123.456","text":"hello"}`
 	req := httptest.NewRequest(http.MethodPost, kRouteProxyChatPostMessage, strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -420,6 +437,7 @@ func TestChatPostMessageKeepsAuthErrorWhenRefreshFails(t *testing.T) {
 	a := newAppWithBotToken(t, api.URL, "xoxb-test")
 
 	req := httptest.NewRequest(http.MethodPost, kRouteProxyChatPostMessage, strings.NewReader(`{"channel":"C1","text":"hello"}`))
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -522,6 +540,7 @@ func TestChatPostMessageRefreshesAndRetriesOnAuthError(t *testing.T) {
 
 	a := newTestApp(t, config{
 		SlackApiUrl:       api.URL,
+		SlackProxyKey:     "proxy-key",
 		SlackClientId:     "client-id",
 		SlackClientSecret: "client-secret",
 		SlackBotToken:     "xoxe.xoxb-old",
@@ -529,6 +548,7 @@ func TestChatPostMessageRefreshesAndRetriesOnAuthError(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, kRouteProxyChatPostMessage, strings.NewReader(`{"channel":"C1","text":"hello"}`))
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -569,6 +589,7 @@ func TestFilesInfoForwardsQuery(t *testing.T) {
 	a := newAppWithBotToken(t, api.URL, "xoxb-test")
 
 	req := httptest.NewRequest(http.MethodGet, kRouteProxyFilesInfo+"?file=F123", nil)
+	req.Header.Set("Authorization", "Bearer proxy-key")
 	rec := httptest.NewRecorder()
 	a.handler().ServeHTTP(rec, req)
 
@@ -703,6 +724,7 @@ func TestProxyHTTPFailures(t *testing.T) {
 			a := newAppWithBotToken(t, api.URL, "test-token")
 
 			req := httptest.NewRequest(http.MethodPost, kRouteProxyChatPostMessage, strings.NewReader(test.requestBody))
+			req.Header.Set("Authorization", "Bearer proxy-key")
 			rec := httptest.NewRecorder()
 			a.handler().ServeHTTP(rec, req)
 
@@ -721,5 +743,48 @@ func TestProxyHTTPFailures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProxyRequestLimit(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer api.Close()
+
+	a := newAppWithBotToken(t, api.URL, "test-token")
+	a.inFlight = make(chan struct{}, 1)
+	handler := a.handler()
+
+	req := httptest.NewRequest(http.MethodGet, kRouteProxyAuthTest, nil)
+	req.Header.Set("Authorization", "Bearer proxy-key")
+	first := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(first, req.Clone(req.Context()))
+		close(done)
+	}()
+	defer func() {
+		close(release)
+		<-done
+	}()
+
+	select {
+	case <-started:
+	case <-done:
+		t.Fatalf("first request failed (status_code: %d)", first.Code)
+	}
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if got, want := rec.Code, http.StatusServiceUnavailable; got != want {
+		t.Fatalf("status code: got %d, want %d", got, want)
+	}
+	if got, want := rec.Header().Get("Retry-After"), "1"; got != want {
+		t.Fatalf("retry after: got %s, want %s", got, want)
 	}
 }
