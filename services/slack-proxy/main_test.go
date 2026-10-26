@@ -42,16 +42,6 @@ func newAppWithBotToken(t *testing.T, apiUrl string, botToken string) *app {
 	})
 }
 
-func newAppWithBotTokenAndProxyKey(t *testing.T, apiUrl string, botToken string, proxyKey string) *app {
-	t.Helper()
-
-	return newTestApp(t, config{
-		SlackApiUrl:   apiUrl,
-		SlackBotToken: botToken,
-		SlackProxyKey: proxyKey,
-	})
-}
-
 func TestValidateConfig(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -163,11 +153,13 @@ func TestPingMethodNotAllowed(t *testing.T) {
 }
 
 func TestAuthTestForwards(t *testing.T) {
+	var gotCalls int
 	var gotMethod string
 	var gotPath string
 	var gotAuth string
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCalls++
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
@@ -187,6 +179,9 @@ func TestAuthTestForwards(t *testing.T) {
 
 	if got, want := rec.Code, http.StatusOK; got != want {
 		t.Fatalf("status code: got %d, want %d", got, want)
+	}
+	if got, want := gotCalls, 1; got != want {
+		t.Fatalf("api calls: got %d, want %d", got, want)
 	}
 	if got, want := gotMethod, http.MethodGet; got != want {
 		t.Fatalf("method: got %s, want %s", got, want)
@@ -225,7 +220,7 @@ func TestAuthTestRequiresProxyAuth(t *testing.T) {
 	}))
 	defer api.Close()
 
-	a := newAppWithBotTokenAndProxyKey(t, api.URL, "xoxb-test", "proxy-key")
+	a := newAppWithBotToken(t, api.URL, "xoxb-test")
 
 	req := httptest.NewRequest(http.MethodGet, kRouteProxyAuthTest, nil)
 	rec := httptest.NewRecorder()
@@ -279,37 +274,6 @@ func TestAuthTestReturnsSlackRequestFailure(t *testing.T) {
 	}
 	if got, want := rec.Body.String(), `"error":"slack_request_failed"`; !strings.Contains(got, want) {
 		t.Fatalf("response body: got %q, want contains %q", got, want)
-	}
-}
-
-func TestAuthTestForwardsWithProxyAuth(t *testing.T) {
-	var gotCalls int
-	var gotAuth string
-
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotCalls++
-		gotAuth = r.Header.Get("Authorization")
-		w.Header().Set("Content-Type", kJsonContentType)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer api.Close()
-
-	a := newAppWithBotTokenAndProxyKey(t, api.URL, "xoxb-test", "proxy-key")
-
-	req := httptest.NewRequest(http.MethodGet, kRouteProxyAuthTest, nil)
-	req.Header.Set("Authorization", "Bearer proxy-key")
-	rec := httptest.NewRecorder()
-	a.handler().ServeHTTP(rec, req)
-
-	if got, want := rec.Code, http.StatusOK; got != want {
-		t.Fatalf("status code: got %d, want %d", got, want)
-	}
-	if got, want := gotCalls, 1; got != want {
-		t.Fatalf("api calls: got %d, want %d", got, want)
-	}
-	if got, want := gotAuth, "Bearer xoxb-test"; got != want {
-		t.Fatalf("forwarded slack auth header: got %s, want %s", got, want)
 	}
 }
 
@@ -654,10 +618,10 @@ func TestConversationRoutesForward(t *testing.T) {
 			}))
 			defer api.Close()
 
-			a := newAppWithBotTokenAndProxyKey(t, api.URL, "test-token", "test-key")
+			a := newAppWithBotToken(t, api.URL, "test-token")
 
 			req := httptest.NewRequest(test.method, test.route+"?"+test.query, strings.NewReader(test.body))
-			req.Header.Set("Authorization", "Bearer test-key")
+			req.Header.Set("Authorization", "Bearer proxy-key")
 			rec := httptest.NewRecorder()
 			a.handler().ServeHTTP(rec, req)
 
