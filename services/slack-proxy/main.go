@@ -28,24 +28,24 @@ const (
 	kRouteSlackOAuthV2Access = "/oauth.v2.access"
 
 	kSlackMethodAuthTest             = "auth.test"
+	kSlackMethodChatDelete           = "chat.delete"
 	kSlackMethodChatPostMessage      = "chat.postMessage"
 	kSlackMethodChatUpdate           = "chat.update"
-	kSlackMethodChatDelete           = "chat.delete"
 	kSlackMethodConversationsHistory = "conversations.history"
-	kSlackMethodFilesGetUpload       = "files.getUploadURLExternal"
 	kSlackMethodFilesComplete        = "files.completeUploadExternal"
+	kSlackMethodFilesGetUpload       = "files.getUploadURLExternal"
 	kSlackMethodFilesInfo            = "files.info"
 	kSlackMethodReactionsAdd         = "reactions.add"
 	kSlackMethodReactionsRemove      = "reactions.remove"
 	kSlackMethodUsersConversations   = "users.conversations"
 
 	kRouteProxyAuthTest             = kRouteSlackPrefix + kSlackMethodAuthTest
+	kRouteProxyChatDelete           = kRouteSlackPrefix + kSlackMethodChatDelete
 	kRouteProxyChatPostMessage      = kRouteSlackPrefix + kSlackMethodChatPostMessage
 	kRouteProxyChatUpdate           = kRouteSlackPrefix + kSlackMethodChatUpdate
-	kRouteProxyChatDelete           = kRouteSlackPrefix + kSlackMethodChatDelete
 	kRouteProxyConversationsHistory = kRouteSlackPrefix + kSlackMethodConversationsHistory
-	kRouteProxyFilesGetUpload       = kRouteSlackPrefix + kSlackMethodFilesGetUpload
 	kRouteProxyFilesComplete        = kRouteSlackPrefix + kSlackMethodFilesComplete
+	kRouteProxyFilesGetUpload       = kRouteSlackPrefix + kSlackMethodFilesGetUpload
 	kRouteProxyFilesInfo            = kRouteSlackPrefix + kSlackMethodFilesInfo
 	kRouteProxyReactionsAdd         = kRouteSlackPrefix + kSlackMethodReactionsAdd
 	kRouteProxyReactionsRemove      = kRouteSlackPrefix + kSlackMethodReactionsRemove
@@ -144,12 +144,12 @@ func (a *app) handler() http.Handler {
 
 	mux.HandleFunc(kRouteProxyPing, a.handlePing)
 	mux.HandleFunc(kRouteProxyAuthTest, a.handleMethod(http.MethodGet, kSlackMethodAuthTest))
+	mux.HandleFunc(kRouteProxyChatDelete, a.handleMethod(http.MethodPost, kSlackMethodChatDelete))
 	mux.HandleFunc(kRouteProxyChatPostMessage, a.handleMethod(http.MethodPost, kSlackMethodChatPostMessage))
 	mux.HandleFunc(kRouteProxyChatUpdate, a.handleMethod(http.MethodPost, kSlackMethodChatUpdate))
-	mux.HandleFunc(kRouteProxyChatDelete, a.handleMethod(http.MethodPost, kSlackMethodChatDelete))
 	mux.HandleFunc(kRouteProxyConversationsHistory, a.handleMethod(http.MethodPost, kSlackMethodConversationsHistory))
-	mux.HandleFunc(kRouteProxyFilesGetUpload, a.handleMethod(http.MethodGet, kSlackMethodFilesGetUpload))
 	mux.HandleFunc(kRouteProxyFilesComplete, a.handleMethod(http.MethodPost, kSlackMethodFilesComplete))
+	mux.HandleFunc(kRouteProxyFilesGetUpload, a.handleMethod(http.MethodGet, kSlackMethodFilesGetUpload))
 	mux.HandleFunc(kRouteProxyFilesInfo, a.handleMethod(http.MethodGet, kSlackMethodFilesInfo))
 	mux.HandleFunc(kRouteProxyReactionsAdd, a.handleMethod(http.MethodPost, kSlackMethodReactionsAdd))
 	mux.HandleFunc(kRouteProxyReactionsRemove, a.handleMethod(http.MethodPost, kSlackMethodReactionsRemove))
