@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
 
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 
 WORKDIR /src
 
