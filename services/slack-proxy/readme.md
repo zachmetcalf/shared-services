@@ -14,4 +14,4 @@ docker:
 `docker compose up -d`
 
 deploy:
-`deploy.md`
+[deploy.md](deploy.md)
