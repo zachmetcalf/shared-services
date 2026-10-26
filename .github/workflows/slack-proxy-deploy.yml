@@ -44,6 +44,7 @@ jobs:
         run: |
           coverprofile="${RUNNER_TEMP}/slack-proxy.cover"
           go test -coverprofile="${coverprofile}" ./...
+          go vet ./...
           coverage="$(go tool cover -func="${coverprofile}" | awk '/^total:/ { print $3 }')"
 
           {
@@ -97,6 +98,11 @@ jobs:
               exit 1
             fi
 
+            if [ -z "${SLACK_PROXY_DOMAIN}" ]; then
+              echo "SLACK_PROXY_DOMAIN secret is empty"
+              exit 1
+            fi
+
             ENV_FILE="/etc/slack-proxy/.env"
             DATA_DIR="/var/lib/slack-proxy"
 
@@ -106,14 +112,8 @@ jobs:
             printf "%s\n" "${SLACK_PROXY_ENV_FILE}" | sudo tee "${ENV_FILE}" >/dev/null
             sudo chmod 600 "${ENV_FILE}"
 
-            if [ -n "${SLACK_PROXY_DOMAIN}" ]; then
-              CADDY_SITE="${SLACK_PROXY_DOMAIN}"
-            else
-              CADDY_SITE=":80"
-            fi
-
             printf "%s\n%s\n%s\n" \
-              "${CADDY_SITE} {" \
+              "https://${SLACK_PROXY_DOMAIN} {" \
               "    reverse_proxy 127.0.0.1:8082" \
               "}" | sudo tee /etc/caddy/Caddyfile >/dev/null
             sudo systemctl reload caddy
@@ -132,6 +132,6 @@ jobs:
               -p 127.0.0.1:8082:8082 \
               "${IMAGE_NAME}:${IMAGE_TAG}"
 
-            curl -fsS http://127.0.0.1:8082/ping >/dev/null
-            curl -fsS http://127.0.0.1/ping >/dev/null
+            curl -fsS --retry 5 --retry-connrefused --max-time 10 http://127.0.0.1:8082/ping >/dev/null
+            curl -fsS --retry 5 --retry-connrefused --max-time 10 "https://${SLACK_PROXY_DOMAIN}/ping" >/dev/null
             sudo docker image prune -f
