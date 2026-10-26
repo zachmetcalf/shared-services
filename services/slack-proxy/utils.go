@@ -142,5 +142,5 @@ func writeError(w http.ResponseWriter, statusCode int, errorCode string) {
 
 func writeMethodNotAllowed(w http.ResponseWriter, method string) {
 	w.Header().Set("Allow", method)
-	writeError(w, http.StatusMethodNotAllowed, kErrorMethodNotAllowed)
+	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
 }
