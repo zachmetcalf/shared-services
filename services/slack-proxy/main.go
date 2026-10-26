@@ -14,13 +14,14 @@ import (
 )
 
 const (
-	kServiceName           = "slack-proxy"
-	kDefaultListenAddress  = ":8082"
-	kDefaultSlackApiUrl    = "https://slack.com/api"
-	kDefaultDotEnvPath     = ".env"
-	kDefaultTokenStorePath = "data/token-store.json"
-	kDefaultHttpTimeout    = 30 * time.Second
-	kJsonContentType       = "application/json; charset=utf-8"
+	kServiceName               = "slack-proxy"
+	kDefaultListenAddress      = ":8082"
+	kDefaultSlackApiUrl        = "https://slack.com/api"
+	kDefaultDotEnvPath         = ".env"
+	kDefaultTokenStorePath     = "data/token-store.json"
+	kDefaultHttpTimeout        = 30 * time.Second
+	kMaximumConcurrentRequests = 16
+	kJsonContentType           = "application/json; charset=utf-8"
 
 	kRouteProxyPing          = "/ping"
 	kRouteSlackPrefix        = "/v1/slack/"
@@ -57,11 +58,6 @@ const (
 	kEnvSlackRefreshToken   = "SLACK_REFRESH_TOKEN"
 	kEnvSlackTokenStorePath = "SLACK_TOKEN_STORE_PATH"
 	kEnvSlackProxyKey       = "SLACK_PROXY_KEY"
-
-	kErrorMethodNotAllowed   = "method_not_allowed"
-	kErrorInvalidRequestBody = "invalid_request_body"
-	kErrorSlackRequestFailed = "slack_request_failed"
-	kErrorInvalidProxyAuth   = "invalid_proxy_auth"
 )
 
 type config struct {
@@ -78,6 +74,7 @@ type app struct {
 	cfg           config
 	client        *http.Client
 	tokenProvider tokenProvider
+	inFlight      chan struct{}
 }
 
 type slackResponse struct {
@@ -102,6 +99,9 @@ func loadConfig() config {
 func validateConfig(cfg config) error {
 	if isBlank(cfg.SlackApiUrl) {
 		return fmt.Errorf("missing config value (key: %s)", kEnvSlackApiUrl)
+	}
+	if isBlank(cfg.SlackProxyKey) {
+		return fmt.Errorf("missing config value (key: %s)", kEnvSlackProxyKey)
 	}
 	if !hasAuthConfig(cfg) {
 		return errors.New("missing env vars (required: SLACK_BOT_TOKEN or SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_REFRESH_TOKEN)")
@@ -135,6 +135,7 @@ func newApp(cfg config) (*app, error) {
 		cfg:           cfg,
 		client:        client,
 		tokenProvider: provider,
+		inFlight:      make(chan struct{}, kMaximumConcurrentRequests),
 	}, nil
 }
 
@@ -182,7 +183,16 @@ func (a *app) handleMethod(allowedMethod string, method string) http.HandlerFunc
 
 func (a *app) forward(w http.ResponseWriter, r *http.Request, method string) {
 	if !a.isProxyAuthorized(r) {
-		writeError(w, http.StatusUnauthorized, kErrorInvalidProxyAuth)
+		writeError(w, http.StatusUnauthorized, "invalid_proxy_auth")
+		return
+	}
+
+	select {
+	case a.inFlight <- struct{}{}:
+		defer func() { <-a.inFlight }()
+	default:
+		w.Header().Set("Retry-After", "1")
+		writeError(w, http.StatusServiceUnavailable, "proxy_busy")
 		return
 	}
 
@@ -193,21 +203,21 @@ func (a *app) forward(w http.ResponseWriter, r *http.Request, method string) {
 			status = http.StatusRequestEntityTooLarge
 		}
 		log.Printf("request body read failed (method: %s, reason: %s)", method, errorReason(err))
-		writeError(w, status, kErrorInvalidRequestBody)
+		writeError(w, status, "invalid_request_body")
 		return
 	}
 
 	token, err := a.tokenProvider.AccessToken(r.Context())
 	if err != nil {
 		log.Printf("token fetch failed (method: %s, reason: %s)", method, errorReason(err))
-		writeError(w, http.StatusInternalServerError, kErrorMissingSlackAuth)
+		writeError(w, http.StatusInternalServerError, "missing_slack_auth")
 		return
 	}
 
 	response, err := a.forwardOnce(r, method, requestBody, token)
 	if err != nil {
 		log.Printf("request failed (method: %s, reason: %s)", method, errorReason(err))
-		writeError(w, http.StatusBadGateway, kErrorSlackRequestFailed)
+		writeError(w, http.StatusBadGateway, "slack_request_failed")
 		return
 	}
 
@@ -225,10 +235,6 @@ func (a *app) forward(w http.ResponseWriter, r *http.Request, method string) {
 }
 
 func (a *app) isProxyAuthorized(r *http.Request) bool {
-	if isBlank(a.cfg.SlackProxyKey) {
-		return true
-	}
-
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
 	return subtle.ConstantTimeCompare([]byte(auth), []byte(formatBearerAuth(a.cfg.SlackProxyKey))) == 1
 }
