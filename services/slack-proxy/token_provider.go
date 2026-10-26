@@ -23,10 +23,6 @@ const (
 	kOAuthFieldClientSecret = "client_secret"
 	kOAuthFieldGrantType    = "grant_type"
 	kOAuthRefreshToken      = "refresh_token"
-
-	kErrorMissingSlackAuth     = "missing_slack_auth"
-	kErrorMissingRefreshToken  = "missing_slack_refresh_token"
-	kErrorRefreshNotConfigured = "slack_token_refresh_not_configured"
 )
 
 type tokenProvider interface {
@@ -40,14 +36,14 @@ type staticTokenProvider struct {
 
 func (p *staticTokenProvider) AccessToken(context.Context) (string, error) {
 	if isBlank(p.token) {
-		return "", errors.New(kErrorMissingSlackAuth)
+		return "", errors.New("missing_slack_auth")
 	}
 
 	return p.token, nil
 }
 
 func (*staticTokenProvider) ForceRefresh(context.Context) error {
-	return errors.New(kErrorRefreshNotConfigured)
+	return errors.New("slack_token_refresh_not_configured")
 }
 
 type rotatingTokenProvider struct {
@@ -111,7 +107,7 @@ func (p *rotatingTokenProvider) AccessToken(ctx context.Context) (string, error)
 	}
 
 	if isBlank(p.accessToken) {
-		return "", errors.New(kErrorMissingSlackAuth)
+		return "", errors.New("missing_slack_auth")
 	}
 
 	return p.accessToken, nil
@@ -137,7 +133,7 @@ func (p *rotatingTokenProvider) shouldRefreshTokenLocked() bool {
 
 func (p *rotatingTokenProvider) refreshTokenLocked(ctx context.Context) error {
 	if isBlank(p.refreshToken) {
-		return errors.New(kErrorMissingRefreshToken)
+		return errors.New("missing_slack_refresh_token")
 	}
 
 	values := url.Values{}
