@@ -6,6 +6,7 @@ Checks: >
   clang-analyzer-*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  misc-include-cleaner,
   performance-*
 
 WarningsAsErrors: ''
