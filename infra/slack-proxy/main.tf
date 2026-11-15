@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+# Copyright (c) 2026-2027 Zach Metcalf. All Rights Reserved.
 
 locals {
   network_tag = "slack-proxy"

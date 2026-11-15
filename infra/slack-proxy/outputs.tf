@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Zach Metcalf. All Rights Reserved.
+# Copyright (c) 2026-2027 Zach Metcalf. All Rights Reserved.
 
 output "gce_host" {
   description = "GCE host"
