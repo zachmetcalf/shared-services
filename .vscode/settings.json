@@ -8,6 +8,9 @@
         "editor.tabSize": 4
     },
     "C_Cpp.autocomplete": "default",
+    "C_Cpp.codeAnalysis.clangTidy.checks.disabled": [
+        "misc-include-cleaner"
+    ],
     "C_Cpp.codeAnalysis.clangTidy.enabled": true,
     "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
     "C_Cpp.codeAnalysis.runAutomatically": true,
